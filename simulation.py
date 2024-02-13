@@ -210,7 +210,7 @@ def dpa_and_tbr():
         number_of_atoms = material.density * volume * N_A / material.average_molar_mass
         return displacement_for_all_atoms / number_of_atoms
 
-    for q in range(2, 4):
+    for q in range(3, 4):
         dpa_values = []
         tbr_values = []
         leakage_fraction = []
