@@ -1,9 +1,12 @@
 # 1. PREREQUISITES
 # Importing required libraries
-import openmc, openmc.deplete, os, plotly.graph_objects as go, plotly.io as pio, neutronics_material_maker as nmm, math, pandas as pd
+import openmc, openmc.deplete, os, plotly.graph_objects as go, plotly.io as pio, neutronics_material_maker as nmm, math, pandas as pd, matplotlib.pyplot as plt
+from prettytable import PrettyTable
+
+import matplotlib.patches as mpatches
 
 # Constants
-BLANKET_VARIATION_COUNT = int((150 - 10) / 5 + 1)
+BLANKET_VARIATION_COUNT = int((66 - 65) / 5 + 1)
 N_A = 6.02214076 * 10e23
 dir_name = "/home/anay/conda/envs/paramak_env/fusion"
 ALL_MATERIALS = nmm.AvailableMaterials()
@@ -162,18 +165,28 @@ def create_geometry(blanket_radius: int, materials, n: int):
             }
 
         if n == 7:
-            color = {
-                cells[0]: "lightgray",  # Dark Slate Gray
-                cells[1]: "royalblue",  # Royal Blue
-                cells[2]: "tomato",  # Tomato
-                cells[3]: "seagreen",  # Sea Green
-                cells[4]: "indigo",  # Indigo
-                cells[5]: "saddlebrown",  # Saddle Brown
-                cells[6]: "black",  # Dark Orchid
+
+            material_colors = {
+                cells[0]: "paleturquoise",  # light green
+                cells[1]: "black",  # salmon
+                cells[2]: "gold",  # periwinkle
+                cells[3]: "coral",  # pink
+                cells[4]: "mediumspringgreen",  # light green-yellow
+                cells[5]: "wheat",
+                cells[6]: "indigo",  # yellow
             }
 
-        plot = geometry.plot(basis="xz", colors=color)
-        plot.figure.savefig(f"xz-cell{n}.png")
+            material_names = [
+                "PLASMA CORE",
+                "FIRST WALL",
+                "MULTIPLIER",
+                "BLANKET",
+                "MODERATOR",
+                "SHIELD",
+                "LAST WALL",
+            ]
+
+            plot = geometry.plot(basis="xz", colors=material_colors)
 
     return geometry
 
@@ -210,7 +223,7 @@ def dpa_and_tbr():
         number_of_atoms = material.density * volume * N_A / material.average_molar_mass
         return displacement_for_all_atoms / number_of_atoms
 
-    for q in range(3, 4):
+    for q in range(1, 2):
         dpa_values = []
         tbr_values = []
         leakage_fraction = []
@@ -267,7 +280,7 @@ def dpa_and_tbr():
             if q == 0:
                 x = 1
             for j in range(len(mats[x])):
-                blanket_thickness = 10 + i * 5
+                blanket_thickness = 65 + i * 5
                 materials = []
                 if q == 0:
                     materials = [
@@ -539,7 +552,7 @@ def dpa_and_tbr():
             dpa_values.append(temp_dpa)
             tbr_values.append(temp_tbr)
 
-        blanket_sizes = list(range(10, 151, 5))
+        blanket_sizes = list(range(65, 66, 5))
         x = 2
         if q == 0:
             x = 1
@@ -566,181 +579,48 @@ def dpa_and_tbr():
         fourth = ["first wall", "multiplier", "moderator", "shield", "last wall"]
         layers = [first, second, third, fourth]
 
-        print(dpa_values)
+        # Create a table
+        table = PrettyTable()
 
-        for a in range(len(layers[q])):
-            # Extract DPA values for the current layer
-            layer_name = layers[q][a]
-            dpa_layer = []
-            for b in range(len(dpa_values)):
-                temp = []
-                for c in range(len(dpa_values[b])):
-                    temp.append(dpa_values[b][c][a])
-                dpa_layer.append(temp)
+        # Define columns
+        table.field_names = [
+            "Material",
+            "TBR",
+            "Leakage Fraction",
+            "DPA on First Wall",
+            "DPA on Last Wall",
+        ]
 
-            dpa_layer_transposed = list(map(list, zip(*dpa_layer)))
-            df_layer = pd.DataFrame(
-                dpa_layer_transposed, columns=blanket_sizes, index=materials
+        # Add data
+        for i in range(len(materials)):
+            table.add_row(
+                [
+                    materials[i],
+                    round(tbr_values[0][i], 3),
+                    round(leakage_fraction[0][i], 3),
+                    round(dpa_values[0][i][0], 3),
+                    round(dpa_values[0][i][1], 3),
+                ]
             )
 
-            # Create a scientific DPA graph using Plotly
-            fig_dpa = go.Figure()
+        # Get the string representation of the table
+        table_str = table.get_string()
 
-            for idx, material in enumerate(df_layer.index):
-                color = colors[idx % len(colors)]
-                fig_dpa.add_trace(
-                    go.Scatter(
-                        x=df_layer.columns,
-                        y=df_layer.loc[material],
-                        mode="lines",
-                        name=f"{material}",
-                        line=dict(color=color),
-                    )
-                )
-
-            # Set the x and y axis to linear scale
-            fig_dpa.update_xaxes(
-                type="linear", title="<b>THICKNESS OF BLANKET (CM)</b>"
-            )
-            fig_dpa.update_yaxes(
-                type="linear", title="<b>DISPLACEMENT PER ATOM (DPA)</b>"
-            )
-
-            # Remove the title
-            fig_dpa.update_layout(
-                legend=dict(
-                    font=dict(size=10),
-                    borderwidth=1,
-                    bordercolor="black",
-                    title=dict(text="<b>LEGEND</b>", font=dict(size=12)),
-                ),  # Add legend boundary and title
-                showlegend=True,
-                xaxis_showgrid=True,
-                yaxis_showgrid=True,
-                margin=dict(l=20, r=20, t=50, b=20),  # Add slight margin
-                title=f"<b>DISPLACEMENT PER ATOM FOR {layer_name.upper()}</b>",
-                title_x=0.5,
-            )
-
-            # Save the figure
-            pio.write_image(fig_dpa, f"graphs/{q}/DPA_{layer_name}.png")
-
-            # Clear the figure
-            fig_dpa = None
-
-        tbr_values_transposed = list(map(list, zip(*tbr_values)))
-        leakage_values_transposed = list(map(list, zip(*leakage_fraction)))
-
-        # Create a DataFrame from tbr_values and leakage_values
-        df_tbr = pd.DataFrame(
-            tbr_values_transposed, columns=blanket_sizes, index=materials
+        # Plot the table as a text table
+        fig, ax = plt.subplots(figsize=(10, 5))
+        ax.text(
+            0.1,
+            0.1,
+            table_str,
+            fontsize=10,
+            va="center",
+            ha="left",
+            fontfamily="monospace",
         )
-        df_leakage = pd.DataFrame(
-            leakage_values_transposed, columns=blanket_sizes, index=materials
-        )
+        ax.axis("off")
 
-        fig_tbr = go.Figure()
-
-        colors_used = []
-        for idx, material in enumerate(df_tbr.index):
-            color = colors[idx % len(colors)]  # Use a different color for each material
-            colors_used.append(color)
-            fig_tbr.add_trace(
-                go.Scatter(
-                    x=df_tbr.columns,
-                    y=df_tbr.loc[material],
-                    mode="lines",
-                    name=f"{material} TBR",
-                    line=dict(color=color),
-                )
-            )
-
-        fig_tbr.update_xaxes(type="linear")
-        fig_tbr.update_yaxes(type="linear")
-
-        # Set the x and y axis labels
-        fig_tbr.update_layout(
-            xaxis_title="<b>BLANKET THICKNESS (CM)</b>",
-            yaxis_title="<b>TBR</b>",
-            title="<b>TBR VS. BLANKET THICKNESS</b>",
-            title_x=0.5,  # Center the title
-            margin=dict(l=20, r=20, b=20, t=50),  # Add slight margin
-            legend=dict(
-                font=dict(size=10),
-                borderwidth=1,
-                bordercolor="black",
-                title=dict(text="<b>LEGEND</b>", font=dict(size=12)),
-            ),  # Add legend boundary and title
-        )
-        pio.write_image(fig_tbr, f"graphs/{q}/TBR.png")
-
-        for idx, material in enumerate(df_tbr.index):
-            fig_tbr.add_trace(
-                go.Scatter(
-                    x=df_leakage.columns,
-                    y=df_leakage.loc[material],
-                    mode="lines",
-                    name=f"{material} Leakage",
-                    line=dict(dash="dash", color=colors_used[idx]),
-                )
-            )
-
-        # Set the x and y axis to linear scale
-        fig_tbr.update_xaxes(type="linear")
-        fig_tbr.update_yaxes(type="linear")
-
-        # Set the x and y axis labels
-        fig_tbr.update_layout(
-            xaxis_title="<b>BLANKET THICKNESS (CM)</b>",
-            yaxis_title="<b>TBR / LEAKAGE</b>",
-            title="<b>TBR AND LEAKAGE VS. BLANKET THICKNESS</b>",
-            title_x=0.5,  # Center the title
-            margin=dict(l=20, r=20, b=20, t=50),  # Add slight margin
-            legend=dict(
-                font=dict(size=10),
-                borderwidth=1,
-                bordercolor="black",
-                title=dict(text="<b>LEGEND</b>", font=dict(size=12)),
-            ),  # Add legend boundary and title
-        )
-
-        # Save the modified PNG file
-        pio.write_image(fig_tbr, f"graphs/{q}/TBR_and_Leakage.png")
-
-        fig_tbr = go.Figure()
-
-        for idx, material in enumerate(df_tbr.index):
-            fig_tbr.add_trace(
-                go.Scatter(
-                    x=df_leakage.columns,
-                    y=df_leakage.loc[material],
-                    mode="lines",
-                    name=f"{material} Leakage",
-                    line=dict(color=colors_used[idx]),
-                )
-            )
-
-        # Set the x and y axis to linear scale
-        fig_tbr.update_xaxes(type="linear")
-        fig_tbr.update_yaxes(type="linear")
-
-        # Set the x and y axis labels
-        fig_tbr.update_layout(
-            xaxis_title="<b>BLANKET THICKNESS (CM)</b>",
-            yaxis_title="<b>LEAKAGE</b>",
-            title="<b>LEAKAGE VS. BLANKET THICKNESS</b>",
-            title_x=0.5,  # Center the title
-            margin=dict(l=20, r=20, b=20, t=50),  # Add slight margin
-            legend=dict(
-                font=dict(size=10),
-                borderwidth=1,
-                bordercolor="black",
-                title=dict(text="<b>LEGEND</b>", font=dict(size=12)),
-            ),  # Add legend boundary and title
-        )
-
-        # Save the modified PNG file
-        pio.write_image(fig_tbr, f"graphs/{q}/Leakage.png")
+        # Save the plot as a PNG file
+        plt.savefig("table.png", bbox_inches="tight")
 
 
 if __name__ == "__main__":
